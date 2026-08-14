@@ -6,15 +6,15 @@ import com.huaweicloud.hdkitservice.model.ConnectRequest;
 import com.huaweicloud.hdkitservice.model.ConnectResponse;
 import com.huaweicloud.hdkitservice.model.CredentialsRequest;
 import com.huaweicloud.hdkitservice.model.CredentialsResponse;
-import com.huaweicloud.hdkitservice.model.ReleaseRequest;
-import com.huaweicloud.hdkitservice.model.ReleaseResponse;
 import com.huaweicloud.hdkitservice.model.SignAgreementResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
@@ -121,21 +121,7 @@ public class SandboxService {
         return new CredentialsResponse(devStageId, expiresAt);
     }
 
-    public ReleaseResponse release(ReleaseRequest req, String ak, String sk) {
-        String devStageId = resolveDevStageId(req.sessionId(), req.devStageId());
-        if (devStageId == null) {
-            throw new HdkitException("HDKIT_INVALID_REQUEST", "缺少 session_id 或 dev_stage_id", null);
-        }
-        try {
-            releaseById(devStageId, ak, sk);
-            return new ReleaseResponse(true, devStageId);
-        } catch (Exception e) {
-            log.error("[release] failed for {}: {}", devStageId, e.getMessage());
-            throw new HdkitException("HDKIT_RELEASE_FAILED", "释放沙箱失败", e);
-        }
-    }
-
-    public void releaseById(String devStageId, String ak, String sk) {
+    private void releaseById(String devStageId, String ak, String sk) {
         if (devStation.statusOf(devStageId, ak, sk) == null) {
             return; // 幂等：环境已不存在，视为已释放
         }
@@ -146,10 +132,11 @@ public class SandboxService {
     }
 
     public CheckUserResponse checkUser(String ak, String sk) {
+        Map<String, String> mdc = MDC.getCopyOfContextMap();
         CompletableFuture<Boolean> realnameFuture = CompletableFuture.supplyAsync(
-                () -> "2".equals(devStation.realNameStatus(ak, sk)));
+                () -> withMdc(mdc, () -> "2".equals(devStation.realNameStatus(ak, sk))));
         CompletableFuture<Boolean> agreementFuture = CompletableFuture.supplyAsync(
-                () -> allAgreementsSigned(devStation.agreements(ak, sk)));
+                () -> withMdc(mdc, () -> allAgreementsSigned(devStation.agreements(ak, sk))));
 
         boolean realnameOk = await(realnameFuture, "查询实名状态失败");
         boolean agreementOk = await(agreementFuture, "查询协议状态失败");
@@ -157,6 +144,17 @@ public class SandboxService {
         if (!realnameOk) throw new HdkitException("HDKIT_NOT_REALNAME", "用户未完成实名认证", null);
         if (!agreementOk) throw new HdkitException("HDKIT_NOT_AGREEMENT", "用户未签署协议", null);
         return new CheckUserResponse(true, true);
+    }
+
+    private static <T> T withMdc(Map<String, String> mdc, java.util.function.Supplier<T> supplier) {
+        if (mdc != null) {
+            MDC.setContextMap(mdc);
+        }
+        try {
+            return supplier.get();
+        } finally {
+            MDC.clear();
+        }
     }
 
     public SignAgreementResponse signAgreement(String ak, String sk) {
