@@ -5,6 +5,7 @@ import com.huaweicloud.hdkitservice.model.ConnectResponse;
 import com.huaweicloud.hdkitservice.model.CredentialsResponse;
 import com.huaweicloud.hdkitservice.model.SignAgreementResponse;
 import com.huaweicloud.hdkitservice.service.SandboxService;
+import com.huaweicloud.hdkitservice.util.Masker;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -28,6 +29,9 @@ class SandboxControllerTest {
 
     @MockBean
     private SandboxService service;
+
+    @MockBean
+    private Masker masker;
 
     @Test
     void connectEndpoint() throws Exception {
@@ -100,6 +104,18 @@ class SandboxControllerTest {
                         .header("X-HW-AK", "AK").header("X-HW-SK", "SK"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("HDKIT_NOT_REALNAME"));
+    }
+
+    @Test
+    void checkUserBothMissingMappedTo403CombinedCode() throws Exception {
+        when(service.checkUser(eq("AK"), eq("SK")))
+                .thenThrow(new SandboxService.HdkitException(
+                        "HDKIT_NOT_REALNAME_AND_AGREEMENT", "用户未完成实名认证且未签署最新版协议", null));
+
+        mvc.perform(get("/rest/developer/server/hdkitservice/check-user")
+                        .header("X-HW-AK", "AK").header("X-HW-SK", "SK"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("HDKIT_NOT_REALNAME_AND_AGREEMENT"));
     }
 
     @Test
