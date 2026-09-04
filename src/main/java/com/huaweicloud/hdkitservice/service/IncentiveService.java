@@ -1,9 +1,17 @@
 package com.huaweicloud.hdkitservice.service;
 
 import com.huaweicloud.hdkitservice.config.HdkitConfig;
+import com.huaweicloud.hdkitservice.model.VoucherClaimLog;
+import com.huaweicloud.hdkitservice.repository.VoucherClaimLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.HexFormat;
 
 @Service
 public class IncentiveService {
@@ -12,10 +20,13 @@ public class IncentiveService {
 
     private final IncentiveClient client;
     private final HdkitConfig config;
+    private final VoucherClaimLogRepository claimLogRepo;
 
-    public IncentiveService(IncentiveClient client, HdkitConfig config) {
+    public IncentiveService(IncentiveClient client, HdkitConfig config,
+                            VoucherClaimLogRepository claimLogRepo) {
         this.client = client;
         this.config = config;
+        this.claimLogRepo = claimLogRepo;
     }
 
     public VoucherStatusResult voucherStatus(String ak, String sk, String securityToken, String providedDomainId) {
@@ -80,7 +91,38 @@ public class IncentiveService {
         }
 
         int amount = Math.min(config.incentiveFaceAmount(), 500);
+
+        logVoucherClaim(domainId, issue.couponId(), amount);
+
         return new VoucherClaimResult(true, issue.couponId(), amount, "领取成功");
+    }
+
+    private void logVoucherClaim(String domainId, String couponId, int amountYuan) {
+        try {
+            String claimId = "V-" + LocalDate.now().toString().replace("-", "")
+                    + "-" + String.format("%06d", System.nanoTime() % 1000000);
+            VoucherClaimLog logEntry = new VoucherClaimLog(
+                    claimId,
+                    sha256(domainId),
+                    amountYuan * 100,
+                    couponId,
+                    "新手活动",
+                    LocalDateTime.now()
+            );
+            claimLogRepo.save(logEntry);
+        } catch (Exception e) {
+            log.warn("[voucher] failed to log claim: {}", e.getMessage());
+        }
+    }
+
+    private static String sha256(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception e) {
+            return input;
+        }
     }
 
     public record VoucherStatusResult(boolean claimed, String message) {}
