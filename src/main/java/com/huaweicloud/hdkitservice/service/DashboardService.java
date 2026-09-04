@@ -1,5 +1,9 @@
 package com.huaweicloud.hdkitservice.service;
 
+import com.huaweicloud.hdkitservice.model.ActivityConversionDTO;
+import com.huaweicloud.hdkitservice.model.ActivityStatsSnapshot;
+import com.huaweicloud.hdkitservice.model.ActivitySummaryDTO;
+import com.huaweicloud.hdkitservice.model.ActivityTrendDTO;
 import com.huaweicloud.hdkitservice.model.AgentDistributionDaily;
 import com.huaweicloud.hdkitservice.model.AgentDistributionDTO;
 import com.huaweicloud.hdkitservice.model.CapabilityDailyStats;
@@ -12,20 +16,37 @@ import com.huaweicloud.hdkitservice.model.DownloadSummaryDTO;
 import com.huaweicloud.hdkitservice.model.DownloadTrendDTO;
 import com.huaweicloud.hdkitservice.model.MetricDaily;
 import com.huaweicloud.hdkitservice.model.NpmDownloadStats;
+import com.huaweicloud.hdkitservice.model.SandboxDurationBucketDaily;
+import com.huaweicloud.hdkitservice.model.SandboxDurationDTO;
+import com.huaweicloud.hdkitservice.model.SandboxHourlyDTO;
+import com.huaweicloud.hdkitservice.model.SandboxHourlyStats;
+import com.huaweicloud.hdkitservice.model.SandboxSummaryDTO;
+import com.huaweicloud.hdkitservice.model.SandboxTrendDTO;
 import com.huaweicloud.hdkitservice.model.SkillDailyStats;
 import com.huaweicloud.hdkitservice.model.SkillRankingDTO;
+import com.huaweicloud.hdkitservice.model.VoucherClaimLog;
+import com.huaweicloud.hdkitservice.model.VoucherDistributionDTO;
+import com.huaweicloud.hdkitservice.model.VoucherFaceValueDaily;
+import com.huaweicloud.hdkitservice.model.VoucherSummaryDTO;
+import com.huaweicloud.hdkitservice.model.VoucherTrendDTO;
+import com.huaweicloud.hdkitservice.repository.ActivityStatsSnapshotRepository;
 import com.huaweicloud.hdkitservice.repository.AgentDistributionDailyRepository;
 import com.huaweicloud.hdkitservice.repository.CapabilityDailyStatsRepository;
 import com.huaweicloud.hdkitservice.repository.MetricDailyRepository;
 import com.huaweicloud.hdkitservice.repository.NpmDownloadStatsRepository;
+import com.huaweicloud.hdkitservice.repository.SandboxDurationBucketDailyRepository;
+import com.huaweicloud.hdkitservice.repository.SandboxHourlyStatsRepository;
 import com.huaweicloud.hdkitservice.repository.SkillDailyStatsRepository;
 import com.huaweicloud.hdkitservice.repository.TelemetryEventRepository;
+import com.huaweicloud.hdkitservice.repository.VoucherClaimLogRepository;
+import com.huaweicloud.hdkitservice.repository.VoucherFaceValueDailyRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,19 +72,34 @@ public class DashboardService {
     private final TelemetryEventRepository telemetryRepo;
     private final CapabilityDailyStatsRepository capabilityDailyRepo;
     private final SkillDailyStatsRepository skillDailyRepo;
+    private final ActivityStatsSnapshotRepository activitySnapshotRepo;
+    private final VoucherClaimLogRepository voucherClaimLogRepo;
+    private final VoucherFaceValueDailyRepository voucherFaceValueRepo;
+    private final SandboxDurationBucketDailyRepository sandboxBucketRepo;
+    private final SandboxHourlyStatsRepository sandboxHourlyRepo;
 
     public DashboardService(MetricDailyRepository metricRepo,
                             AgentDistributionDailyRepository agentRepo,
                             NpmDownloadStatsRepository npmRepo,
                             TelemetryEventRepository telemetryRepo,
                             CapabilityDailyStatsRepository capabilityDailyRepo,
-                            SkillDailyStatsRepository skillDailyRepo) {
+                            SkillDailyStatsRepository skillDailyRepo,
+                            ActivityStatsSnapshotRepository activitySnapshotRepo,
+                            VoucherClaimLogRepository voucherClaimLogRepo,
+                            VoucherFaceValueDailyRepository voucherFaceValueRepo,
+                            SandboxDurationBucketDailyRepository sandboxBucketRepo,
+                            SandboxHourlyStatsRepository sandboxHourlyRepo) {
         this.metricRepo = metricRepo;
         this.agentRepo = agentRepo;
         this.npmRepo = npmRepo;
         this.telemetryRepo = telemetryRepo;
         this.capabilityDailyRepo = capabilityDailyRepo;
         this.skillDailyRepo = skillDailyRepo;
+        this.activitySnapshotRepo = activitySnapshotRepo;
+        this.voucherClaimLogRepo = voucherClaimLogRepo;
+        this.voucherFaceValueRepo = voucherFaceValueRepo;
+        this.sandboxBucketRepo = sandboxBucketRepo;
+        this.sandboxHourlyRepo = sandboxHourlyRepo;
     }
 
     public DeveloperSummaryDTO getDeveloperSummary() {
@@ -291,6 +327,11 @@ public class DashboardService {
         if (lower.startsWith("workbuddy")) return "workbuddy";
         if (lower.startsWith("码道")) return "码道";
         if (lower.startsWith("officeace")) return "officeace";
+        if (lower.startsWith("codearts")) return "codearts";
+        if (lower.startsWith("hermes")) return "hermes";
+        if (lower.startsWith("dsh")) return "dsh";
+        if (lower.startsWith("mcp")) return "mcp";
+        if (lower.startsWith("vscode")) return "vscode";
         return raw.trim();
     }
 
@@ -554,5 +595,494 @@ public class DashboardService {
                     i + 1, e.getKey(), e.getValue(), Math.round(pct * 10) / 10.0));
         }
         return new SkillRankingDTO(skills);
+    }
+
+    // ==================== Activity Statistics ====================
+
+    public ActivitySummaryDTO getActivitySummary() {
+        ActivityStatsSnapshot latest = activitySnapshotRepo.findFirstByOrderBySnapshotDateDesc().orElse(null);
+        if (latest == null) {
+            return new ActivitySummaryDTO(0, 0, 0, 0, 0, 0, 0, List.of());
+        }
+
+        long total = latest.getParticipantCount();
+        long c1 = latest.getBeginnerCount();
+        long c2 = latest.getIntermediateCount();
+        long c3 = latest.getAdvancedCount();
+
+        double c1Rate = total > 0 ? round1((double) c1 / total * 100) : 0;
+        double c2Rate = total > 0 ? round1((double) c2 / total * 100) : 0;
+        double c3Rate = total > 0 ? round1((double) c3 / total * 100) : 0;
+
+        List<ActivitySummaryDTO.FunnelStage> funnel = List.of(
+                new ActivitySummaryDTO.FunnelStage("参与活动", total, 100.0),
+                new ActivitySummaryDTO.FunnelStage("初章完成", c1, c1Rate),
+                new ActivitySummaryDTO.FunnelStage("第二章完成", c2, c2Rate),
+                new ActivitySummaryDTO.FunnelStage("终章完成", c3, c3Rate)
+        );
+
+        return new ActivitySummaryDTO(total, c1, c2, c3, c1Rate, c2Rate, c3Rate, funnel);
+    }
+
+    public ActivityTrendDTO getActivityTrend() {
+        LocalDate today = LocalDate.now();
+        LocalDate startDate = today.minusDays(13);
+
+        List<ActivityStatsSnapshot> snapshots =
+                activitySnapshotRepo.findBySnapshotDateGreaterThanEqualOrderBySnapshotDateAsc(startDate);
+
+        List<ActivityTrendDTO.TrendPoint> chapter1 = new ArrayList<>();
+        List<ActivityTrendDTO.TrendPoint> chapter2 = new ArrayList<>();
+        List<ActivityTrendDTO.TrendPoint> chapter3 = new ArrayList<>();
+
+        Map<LocalDate, ActivityStatsSnapshot> snapshotMap = new TreeMap<>();
+        for (ActivityStatsSnapshot s : snapshots) {
+            snapshotMap.put(s.getSnapshotDate(), s);
+        }
+
+        ActivityStatsSnapshot prev = null;
+        for (LocalDate d = startDate; !d.isAfter(today); d = d.plusDays(1)) {
+            ActivityStatsSnapshot curr = snapshotMap.get(d);
+            if (curr != null) {
+                long c1New = curr.getBeginnerCount() - (prev != null ? prev.getBeginnerCount() : 0);
+                long c2New = curr.getIntermediateCount() - (prev != null ? prev.getIntermediateCount() : 0);
+                long c3New = curr.getAdvancedCount() - (prev != null ? prev.getAdvancedCount() : 0);
+                chapter1.add(new ActivityTrendDTO.TrendPoint(d.toString(), Math.max(0, c1New)));
+                chapter2.add(new ActivityTrendDTO.TrendPoint(d.toString(), Math.max(0, c2New)));
+                chapter3.add(new ActivityTrendDTO.TrendPoint(d.toString(), Math.max(0, c3New)));
+                prev = curr;
+            } else {
+                chapter1.add(new ActivityTrendDTO.TrendPoint(d.toString(), 0));
+                chapter2.add(new ActivityTrendDTO.TrendPoint(d.toString(), 0));
+                chapter3.add(new ActivityTrendDTO.TrendPoint(d.toString(), 0));
+            }
+        }
+
+        return new ActivityTrendDTO(chapter1, chapter2, chapter3);
+    }
+
+    public ActivityConversionDTO getActivityConversion() {
+        ActivityStatsSnapshot latest = activitySnapshotRepo.findFirstByOrderBySnapshotDateDesc().orElse(null);
+        if (latest == null || latest.getParticipantCount() == 0) {
+            return new ActivityConversionDTO(List.of());
+        }
+
+        long total = latest.getParticipantCount();
+        long c1 = latest.getBeginnerCount();
+        long c2 = latest.getIntermediateCount();
+        long c3 = latest.getAdvancedCount();
+
+        double r1 = total > 0 ? round1((double) c1 / total * 100) : 0;
+        double r2 = c1 > 0 ? round1((double) c2 / c1 * 100) : 0;
+        double r3 = c2 > 0 ? round1((double) c3 / c2 * 100) : 0;
+
+        List<ActivityConversionDTO.ConvItem> stages = List.of(
+                new ActivityConversionDTO.ConvItem("参与 → 初章", r1),
+                new ActivityConversionDTO.ConvItem("初章 → 第二章", r2),
+                new ActivityConversionDTO.ConvItem("第二章 → 终章", r3)
+        );
+
+        return new ActivityConversionDTO(stages);
+    }
+
+    private static double round1(double v) {
+        return Math.round(v * 10) / 10.0;
+    }
+
+    // ==================== Voucher Resources ====================
+
+    private static final String KEY_VOUCHER_DAILY_COUNT = "voucher_daily_count";
+    private static final String KEY_VOUCHER_DAILY_AMOUNT = "voucher_daily_amount";
+    private static final String KEY_VOUCHER_TOTAL_COUNT = "voucher_total_count";
+    private static final String KEY_VOUCHER_TOTAL_AMOUNT = "voucher_total_amount";
+    private static final String KEY_VOUCHER_MONTHLY_COUNT = "voucher_monthly_count";
+    private static final String KEY_VOUCHER_MONTHLY_AMOUNT = "voucher_monthly_amount";
+
+    public VoucherSummaryDTO getVoucherSummary() {
+        LocalDate today = LocalDate.now();
+        LocalDate yesterday = today.minusDays(1);
+        LocalDate firstOfMonth = today.withDayOfMonth(1);
+        LocalDate lastMonthStart = today.minusMonths(1).withDayOfMonth(1);
+
+        long totalCount = getMetricValue(KEY_VOUCHER_TOTAL_COUNT, today, voucherClaimLogRepo::countAllDistinctUsers);
+        long totalAmount = getMetricValue(KEY_VOUCHER_TOTAL_AMOUNT, today, voucherClaimLogRepo::sumAllAmount);
+
+        long todayCount = getMetricValue(KEY_VOUCHER_DAILY_COUNT, today, () -> voucherClaimLogRepo.countDistinctUsersByDate(today));
+        long todayAmount = getMetricValue(KEY_VOUCHER_DAILY_AMOUNT, today, () -> voucherClaimLogRepo.sumAmountByDate(today));
+        long yesterdayCount = getMetricValue(KEY_VOUCHER_DAILY_COUNT, yesterday, () -> voucherClaimLogRepo.countDistinctUsersByDate(yesterday));
+        long yesterdayAmount = getMetricValue(KEY_VOUCHER_DAILY_AMOUNT, yesterday, () -> voucherClaimLogRepo.sumAmountByDate(yesterday));
+
+        double todayCountChain = yesterdayCount > 0 ? round1((double) (todayCount - yesterdayCount) / yesterdayCount * 100) : (todayCount > 0 ? 100.0 : 0);
+        double todayAmountChain = yesterdayAmount > 0 ? round1((double) (todayAmount - yesterdayAmount) / yesterdayAmount * 100) : (todayAmount > 0 ? 100.0 : 0);
+
+        int year = today.getYear();
+        int month = today.getMonthValue();
+        int lastYear = lastMonthStart.getYear();
+        int lastMonth = lastMonthStart.getMonthValue();
+
+        long monthCount = getMetricValue(KEY_VOUCHER_MONTHLY_COUNT, today, () -> voucherClaimLogRepo.countDistinctUsersByMonth(year, month));
+        long monthAmount = getMetricValue(KEY_VOUCHER_MONTHLY_AMOUNT, today, () -> voucherClaimLogRepo.sumAmountByMonth(year, month));
+        long lastMonthCount = voucherClaimLogRepo.countDistinctUsersByMonth(lastYear, lastMonth);
+        long lastMonthAmount = voucherClaimLogRepo.sumAmountByMonth(lastYear, lastMonth);
+
+        double monthCountChain = lastMonthCount > 0 ? round1((double) (monthCount - lastMonthCount) / lastMonthCount * 100) : (monthCount > 0 ? 100.0 : 0);
+        double monthAmountChain = lastMonthAmount > 0 ? round1((double) (monthAmount - lastMonthAmount) / lastMonthAmount * 100) : (monthAmount > 0 ? 100.0 : 0);
+
+        return new VoucherSummaryDTO(
+                totalCount, totalAmount,
+                todayCount, todayAmount, todayCountChain, todayAmountChain,
+                monthCount, monthAmount, monthCountChain, monthAmountChain
+        );
+    }
+
+    public VoucherTrendDTO getVoucherTrend() {
+        LocalDate startDate = LocalDate.now().minusDays(TREND_DAYS - 1);
+        List<Object[]> rows = voucherClaimLogRepo.findDailyStatsSince(startDate);
+
+        Map<LocalDate, long[]> dailyMap = new TreeMap<>();
+        for (Object[] row : rows) {
+            java.sql.Date sqlDate = (java.sql.Date) row[0];
+            LocalDate d = sqlDate.toLocalDate();
+            long cnt = ((Number) row[1]).longValue();
+            long amt = ((Number) row[2]).longValue();
+            dailyMap.put(d, new long[]{cnt, amt});
+        }
+
+        LocalDate today = LocalDate.now();
+        List<VoucherTrendDTO.TrendPoint> points = new ArrayList<>();
+        for (LocalDate d = startDate; !d.isAfter(today); d = d.plusDays(1)) {
+            long[] vals = dailyMap.getOrDefault(d, new long[]{0, 0});
+            points.add(new VoucherTrendDTO.TrendPoint(d.toString(), vals[0], vals[1]));
+        }
+
+        return new VoucherTrendDTO(points);
+    }
+
+    public VoucherDistributionDTO getVoucherDistribution() {
+        LocalDate today = LocalDate.now();
+
+        List<VoucherFaceValueDaily> preAggregated = voucherFaceValueRepo.findByStatDateOrderByClaimCountDesc(today);
+        if (preAggregated != null && !preAggregated.isEmpty()) {
+            long total = preAggregated.stream().mapToLong(VoucherFaceValueDaily::getClaimCount).sum();
+            List<VoucherDistributionDTO.FaceValueItem> items = new ArrayList<>();
+            for (VoucherFaceValueDaily v : preAggregated) {
+                double pct = total > 0 ? round1((double) v.getClaimCount() / total * 100) : 0;
+                items.add(new VoucherDistributionDTO.FaceValueItem(v.getFaceAmount(), v.getClaimCount(), pct));
+            }
+            return new VoucherDistributionDTO(items);
+        }
+
+        List<Object[]> rows = voucherClaimLogRepo.findFaceValueDistributionByDate(today);
+        if (rows.isEmpty()) {
+            return new VoucherDistributionDTO(List.of());
+        }
+        long total = 0;
+        for (Object[] row : rows) {
+            total += ((Number) row[1]).longValue();
+        }
+        List<VoucherDistributionDTO.FaceValueItem> items = new ArrayList<>();
+        for (Object[] row : rows) {
+            int amount = ((Number) row[0]).intValue();
+            int count = ((Number) row[1]).intValue();
+            double pct = total > 0 ? round1((double) count / total * 100) : 0;
+            items.add(new VoucherDistributionDTO.FaceValueItem(amount, count, pct));
+        }
+        return new VoucherDistributionDTO(items);
+    }
+
+    void aggregateVoucherMetrics(LocalDate date) {
+        log.info("[voucher] aggregating for {}", date);
+
+        saveMetric(date, KEY_VOUCHER_DAILY_COUNT, voucherClaimLogRepo.countDistinctUsersByDate(date));
+        saveMetric(date, KEY_VOUCHER_DAILY_AMOUNT, voucherClaimLogRepo.sumAmountByDate(date));
+
+        long prevTotalCount = 0;
+        long prevTotalAmount = 0;
+        Optional<MetricDaily> prevCount = metricRepo.findByMetricDateAndMetricKey(date.minusDays(1), KEY_VOUCHER_TOTAL_COUNT);
+        Optional<MetricDaily> prevAmount = metricRepo.findByMetricDateAndMetricKey(date.minusDays(1), KEY_VOUCHER_TOTAL_AMOUNT);
+        if (prevCount.isPresent() && prevCount.get().getMetricValue() != null) {
+            prevTotalCount = prevCount.get().getMetricValue();
+        }
+        if (prevAmount.isPresent() && prevAmount.get().getMetricValue() != null) {
+            prevTotalAmount = prevAmount.get().getMetricValue();
+        }
+
+        long todayCount = voucherClaimLogRepo.countDistinctUsersByDate(date);
+        long todayAmount = voucherClaimLogRepo.sumAmountByDate(date);
+        saveMetric(date, KEY_VOUCHER_TOTAL_COUNT, prevTotalCount + todayCount);
+        saveMetric(date, KEY_VOUCHER_TOTAL_AMOUNT, prevTotalAmount + todayAmount);
+
+        int year = date.getYear();
+        int month = date.getMonthValue();
+        saveMetric(date, KEY_VOUCHER_MONTHLY_COUNT, voucherClaimLogRepo.countDistinctUsersByMonth(year, month));
+        saveMetric(date, KEY_VOUCHER_MONTHLY_AMOUNT, voucherClaimLogRepo.sumAmountByMonth(year, month));
+
+        aggregateVoucherFaceValue(date);
+
+        log.info("[voucher] done for {}", date);
+    }
+
+    private void aggregateVoucherFaceValue(LocalDate date) {
+        List<Object[]> rows = voucherClaimLogRepo.findFaceValueDistributionByDate(date);
+        for (Object[] row : rows) {
+            int amountYuan = ((Number) row[0]).intValue();
+            int count = ((Number) row[1]).intValue();
+
+            VoucherFaceValueDaily.PK pk = new VoucherFaceValueDaily.PK(date, amountYuan);
+            VoucherFaceValueDaily existing = voucherFaceValueRepo.findById(pk).orElse(null);
+            if (existing != null) {
+                existing.setClaimCount(count);
+                existing.setUpdatedAt(java.time.LocalDateTime.now());
+                voucherFaceValueRepo.save(existing);
+            } else {
+                voucherFaceValueRepo.save(new VoucherFaceValueDaily(date, amountYuan, count));
+            }
+        }
+        log.info("[voucher] face value distribution aggregated for {}, {} groups", date, rows.size());
+    }
+
+    // ==================== Sandbox Resources ====================
+
+    private static final String KEY_SANDBOX_DAILY_USERS = "sandbox_daily_users";
+    private static final String KEY_SANDBOX_DAILY_EVENTS = "sandbox_daily_events";
+    private static final String KEY_SANDBOX_TOTAL_USERS = "sandbox_total_users";
+    private static final String KEY_SANDBOX_AVG_DURATION_MS = "sandbox_avg_duration_ms";
+    private static final String KEY_SANDBOX_P95_DURATION_MS = "sandbox_p95_duration_ms";
+
+    public SandboxSummaryDTO getSandboxSummary() {
+        LocalDate today = LocalDate.now();
+        LocalDate yesterday = today.minusDays(1);
+
+        long totalUsers = getMetricValue(KEY_SANDBOX_TOTAL_USERS, today,
+                telemetryRepo::countAllSandboxUsers);
+
+        long dailyUsers = getMetricValue(KEY_SANDBOX_DAILY_USERS, today,
+                () -> telemetryRepo.countSandboxUsersByDate(today));
+        long yesterdayUsers = getMetricValue(KEY_SANDBOX_DAILY_USERS, yesterday,
+                () -> telemetryRepo.countSandboxUsersByDate(yesterday));
+        double chainRatio = 0;
+        if (yesterdayUsers > 0) {
+            chainRatio = (double) (dailyUsers - yesterdayUsers) / yesterdayUsers * 100;
+        } else if (dailyUsers > 0) {
+            chainRatio = 100;
+        }
+
+        long avgMs = getMetricValue(KEY_SANDBOX_AVG_DURATION_MS, today, () -> 0);
+        long yesterdayAvgMs = getMetricValue(KEY_SANDBOX_AVG_DURATION_MS, yesterday, () -> 0);
+        double avgSec = avgMs / 1000.0;
+        double avgDeltaSec = (yesterdayAvgMs - avgMs) / 1000.0;
+
+        long p95Ms = getMetricValue(KEY_SANDBOX_P95_DURATION_MS, today, () -> 0);
+        double p95Sec = p95Ms / 1000.0;
+
+        return new SandboxSummaryDTO(totalUsers, dailyUsers, chainRatio,
+                avgSec, avgDeltaSec, p95Sec, "<20s");
+    }
+
+    public SandboxTrendDTO getSandboxTrend() {
+        LocalDate startDate = LocalDate.now().minusDays(29);
+
+        List<MetricDaily> userMetrics = metricRepo.findByKeySince(KEY_SANDBOX_DAILY_USERS, startDate);
+        List<MetricDaily> eventMetrics = metricRepo.findByKeySince(KEY_SANDBOX_DAILY_EVENTS, startDate);
+
+        if (userMetrics != null && !userMetrics.isEmpty()) {
+            List<SandboxTrendDTO.TrendPoint> daily = userMetrics.stream()
+                    .map(m -> new SandboxTrendDTO.TrendPoint(m.getMetricDate().toString(), m.getMetricValue()))
+                    .toList();
+            List<SandboxTrendDTO.TrendPoint> events = (eventMetrics != null ? eventMetrics : List.<MetricDaily>of()).stream()
+                    .map(m -> new SandboxTrendDTO.TrendPoint(m.getMetricDate().toString(), m.getMetricValue()))
+                    .toList();
+            long total = daily.stream().mapToLong(SandboxTrendDTO.TrendPoint::value).sum();
+            return new SandboxTrendDTO(daily, events, total);
+        }
+
+        return new SandboxTrendDTO(List.of(), List.of(), 0);
+    }
+
+    public SandboxDurationDTO getSandboxDurationDistribution() {
+        LocalDate today = LocalDate.now();
+
+        List<SandboxDurationBucketDaily> buckets =
+                sandboxBucketRepo.findByStatDateOrderByBucketOrder(today);
+
+        if (buckets != null && !buckets.isEmpty()) {
+            return new SandboxDurationDTO(today.toString(),
+                    buckets.stream().map(b -> new SandboxDurationDTO.BucketItem(
+                            bucketLabelToDisplay(b.getBucketLabel()),
+                            b.getBucketOrder(), b.getCount()))
+                            .toList());
+        }
+
+        return buildDurationFromTelemetry(today);
+    }
+
+    public SandboxHourlyDTO getSandboxHourly() {
+        LocalDate today = LocalDate.now();
+
+        List<SandboxHourlyStats> stats =
+                sandboxHourlyRepo.findByStatDateOrderByHourOfDay(today);
+
+        if (stats != null && !stats.isEmpty()) {
+            Map<Integer, Integer> hourMap = new HashMap<>();
+            for (SandboxHourlyStats s : stats) {
+                hourMap.put(s.getHourOfDay(), s.getUserCount());
+            }
+            List<SandboxHourlyDTO.HourlyPoint> points = new ArrayList<>();
+            for (int h = 0; h < 24; h++) {
+                points.add(new SandboxHourlyDTO.HourlyPoint(h, hourMap.getOrDefault(h, 0)));
+            }
+            return new SandboxHourlyDTO(today.toString(), points);
+        }
+
+        return buildHourlyFromTelemetry(today);
+    }
+
+    void aggregateSandboxMetrics(LocalDate date) {
+        log.info("[sandbox] aggregating for {}", date);
+
+        long dailyUsers = telemetryRepo.countSandboxUsersByDate(date);
+        long dailyEvents = telemetryRepo.countSandboxEventsByDate(date);
+        saveMetric(date, KEY_SANDBOX_DAILY_USERS, dailyUsers);
+        saveMetric(date, KEY_SANDBOX_DAILY_EVENTS, dailyEvents);
+
+        long prevTotal = getMetricValue(KEY_SANDBOX_TOTAL_USERS, date.minusDays(1),
+                () -> telemetryRepo.countAllSandboxUsers() - dailyUsers);
+        saveMetric(date, KEY_SANDBOX_TOTAL_USERS, prevTotal + dailyUsers);
+
+        List<Double> durations = telemetryRepo.sandboxDurationsByDate(date);
+        if (durations != null && !durations.isEmpty()) {
+            double avg = durations.stream().mapToDouble(d -> d).average().orElse(0);
+            long p95 = calcP95(durations);
+            saveMetric(date, KEY_SANDBOX_AVG_DURATION_MS, (long) avg);
+            saveMetric(date, KEY_SANDBOX_P95_DURATION_MS, p95);
+
+            aggregateDurationBuckets(date, durations);
+        }
+
+        aggregateSandboxHourlyStats(date);
+
+        log.info("[sandbox] done for {}", date);
+    }
+
+    private long calcP95(List<Double> durations) {
+        List<Double> copy = new ArrayList<>(durations);
+        Collections.sort(copy);
+        int idx = (int) Math.ceil(copy.size() * 0.95) - 1;
+        idx = Math.max(0, idx);
+        return (long) copy.get(idx).doubleValue();
+    }
+
+    private void aggregateDurationBuckets(LocalDate date, List<Double> durations) {
+        Object[][] buckets = {
+            {"lt_5s",   1,      0,   5000},
+            {"5_8s",    2,   5000,   8000},
+            {"8_10s",   3,   8000,  10000},
+            {"10_15s",  4,  10000,  15000},
+            {"15_20s",  5,  15000,  20000},
+            {"20_30s",  6,  20000,  30000},
+            {"gt_30s",  7,  30000, Long.MAX_VALUE},
+        };
+
+        for (Object[] b : buckets) {
+            String label = (String) b[0];
+            int order = (int) b[1];
+            long min = ((Number) b[2]).longValue();
+            long max = ((Number) b[3]).longValue();
+            long count = durations.stream()
+                    .filter(d -> d >= min && d < max)
+                    .count();
+
+            SandboxDurationBucketDaily.PK pk = new SandboxDurationBucketDaily.PK(date, label);
+            SandboxDurationBucketDaily existing = sandboxBucketRepo.findById(pk).orElse(null);
+            if (existing != null) {
+                existing.setCount((int) count);
+                existing.setUpdatedAt(java.time.LocalDateTime.now());
+                sandboxBucketRepo.save(existing);
+            } else {
+                sandboxBucketRepo.save(new SandboxDurationBucketDaily(date, label, order, (int) count));
+            }
+        }
+    }
+
+    private void aggregateSandboxHourlyStats(LocalDate date) {
+        List<Object[]> rows = telemetryRepo.sandboxHourlyUsersByDate(date);
+        Map<Integer, Integer> hourMap = new HashMap<>();
+        for (Object[] row : rows) {
+            int hour = ((Number) row[0]).intValue();
+            int count = ((Number) row[1]).intValue();
+            hourMap.put(hour, count);
+        }
+
+        for (int h = 0; h < 24; h++) {
+            int count = hourMap.getOrDefault(h, 0);
+            SandboxHourlyStats.PK pk = new SandboxHourlyStats.PK(date, h);
+            SandboxHourlyStats existing = sandboxHourlyRepo.findById(pk).orElse(null);
+            if (existing != null) {
+                existing.setUserCount(count);
+                existing.setUpdatedAt(java.time.LocalDateTime.now());
+                sandboxHourlyRepo.save(existing);
+            } else {
+                sandboxHourlyRepo.save(new SandboxHourlyStats(date, h, count));
+            }
+        }
+    }
+
+    private SandboxDurationDTO buildDurationFromTelemetry(LocalDate date) {
+        List<Double> durations = telemetryRepo.sandboxDurationsByDate(date);
+        if (durations == null || durations.isEmpty()) {
+            return new SandboxDurationDTO(date.toString(), List.of());
+        }
+
+        Object[][] buckets = {
+            {"lt_5s",   1,      0,   5000},
+            {"5_8s",    2,   5000,   8000},
+            {"8_10s",   3,   8000,  10000},
+            {"10_15s",  4,  10000,  15000},
+            {"15_20s",  5,  15000,  20000},
+            {"20_30s",  6,  20000,  30000},
+            {"gt_30s",  7,  30000, Long.MAX_VALUE},
+        };
+
+        List<SandboxDurationDTO.BucketItem> items = new ArrayList<>();
+        for (Object[] b : buckets) {
+            String label = (String) b[0];
+            int order = (int) b[1];
+            long min = ((Number) b[2]).longValue();
+            long max = ((Number) b[3]).longValue();
+            int count = (int) durations.stream()
+                    .filter(d -> d >= min && d < max)
+                    .count();
+            items.add(new SandboxDurationDTO.BucketItem(bucketLabelToDisplay(label), order, count));
+        }
+        return new SandboxDurationDTO(date.toString(), items);
+    }
+
+    private SandboxHourlyDTO buildHourlyFromTelemetry(LocalDate date) {
+        List<Object[]> rows = telemetryRepo.sandboxHourlyUsersByDate(date);
+        Map<Integer, Integer> hourMap = new HashMap<>();
+        for (Object[] row : rows) {
+            int hour = ((Number) row[0]).intValue();
+            int count = ((Number) row[1]).intValue();
+            hourMap.put(hour, count);
+        }
+
+        List<SandboxHourlyDTO.HourlyPoint> points = new ArrayList<>();
+        for (int h = 0; h < 24; h++) {
+            points.add(new SandboxHourlyDTO.HourlyPoint(h, hourMap.getOrDefault(h, 0)));
+        }
+        return new SandboxHourlyDTO(date.toString(), points);
+    }
+
+    private static String bucketLabelToDisplay(String label) {
+        return switch (label) {
+            case "lt_5s" -> "<5s";
+            case "5_8s" -> "5-8s";
+            case "8_10s" -> "8-10s";
+            case "10_15s" -> "10-15s";
+            case "15_20s" -> "15-20s";
+            case "20_30s" -> "20-30s";
+            case "gt_30s" -> ">30s";
+            default -> label;
+        };
     }
 }

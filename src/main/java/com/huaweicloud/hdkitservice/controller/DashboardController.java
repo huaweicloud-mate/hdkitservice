@@ -1,5 +1,8 @@
 package com.huaweicloud.hdkitservice.controller;
 
+import com.huaweicloud.hdkitservice.model.ActivityConversionDTO;
+import com.huaweicloud.hdkitservice.model.ActivitySummaryDTO;
+import com.huaweicloud.hdkitservice.model.ActivityTrendDTO;
 import com.huaweicloud.hdkitservice.model.AgentDistributionDTO;
 import com.huaweicloud.hdkitservice.model.CapabilityDistributionDTO;
 import com.huaweicloud.hdkitservice.model.CapabilitySummaryDTO;
@@ -8,7 +11,14 @@ import com.huaweicloud.hdkitservice.model.DeveloperSummaryDTO;
 import com.huaweicloud.hdkitservice.model.DeveloperTrendDTO;
 import com.huaweicloud.hdkitservice.model.DownloadSummaryDTO;
 import com.huaweicloud.hdkitservice.model.DownloadTrendDTO;
+import com.huaweicloud.hdkitservice.model.SandboxDurationDTO;
+import com.huaweicloud.hdkitservice.model.SandboxHourlyDTO;
+import com.huaweicloud.hdkitservice.model.SandboxSummaryDTO;
+import com.huaweicloud.hdkitservice.model.SandboxTrendDTO;
 import com.huaweicloud.hdkitservice.model.SkillRankingDTO;
+import com.huaweicloud.hdkitservice.model.VoucherDistributionDTO;
+import com.huaweicloud.hdkitservice.model.VoucherSummaryDTO;
+import com.huaweicloud.hdkitservice.model.VoucherTrendDTO;
 import com.huaweicloud.hdkitservice.service.DashboardService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -75,5 +85,61 @@ public class DashboardController {
     @GetMapping("/capability/skill/ranking")
     public SkillRankingDTO skillRanking() {
         return dashboardService.getSkillRanking();
+    }
+
+    // ==================== Activity Statistics ====================
+
+    @GetMapping("/activity/summary")
+    public ActivitySummaryDTO activitySummary() {
+        return dashboardService.getActivitySummary();
+    }
+
+    @GetMapping("/activity/trend")
+    public ActivityTrendDTO activityTrend() {
+        return dashboardService.getActivityTrend();
+    }
+
+    @GetMapping("/activity/conversion")
+    public ActivityConversionDTO activityConversion() {
+        return dashboardService.getActivityConversion();
+    }
+
+    // ==================== Voucher Resources ====================
+
+    @GetMapping("/voucher/summary")
+    public VoucherSummaryDTO voucherSummary() {
+        return dashboardService.getVoucherSummary();
+    }
+
+    @GetMapping("/voucher/trend")
+    public VoucherTrendDTO voucherTrend() {
+        return dashboardService.getVoucherTrend();
+    }
+
+    @GetMapping("/voucher/distribution")
+    public VoucherDistributionDTO voucherDistribution() {
+        return dashboardService.getVoucherDistribution();
+    }
+
+    // ==================== Sandbox Resources ====================
+
+    @GetMapping("/sandbox/summary")
+    public SandboxSummaryDTO sandboxSummary() {
+        return dashboardService.getSandboxSummary();
+    }
+
+    @GetMapping("/sandbox/trend")
+    public SandboxTrendDTO sandboxTrend() {
+        return dashboardService.getSandboxTrend();
+    }
+
+    @GetMapping("/sandbox/duration")
+    public SandboxDurationDTO sandboxDuration() {
+        return dashboardService.getSandboxDurationDistribution();
+    }
+
+    @GetMapping("/sandbox/hourly")
+    public SandboxHourlyDTO sandboxHourly() {
+        return dashboardService.getSandboxHourly();
     }
 }
