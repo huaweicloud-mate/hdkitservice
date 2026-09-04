@@ -17,7 +17,7 @@ public class ActivitySnapshotTask {
 
     private static final Logger log = LoggerFactory.getLogger(ActivitySnapshotTask.class);
 
-    private static final String API_URL = "https://open-dataset.huaweicloud.com/api/v1/hdopenservice/user/activity-stats";
+    private static final String API_URL = "https://open-dataset.huaweicloud.com/api/v1/hdopenservice/servlet/activity-stats";
     private static final String ACTIVITY_CODE = "open-capability-2026";
 
     private final RestTemplate restTemplate;
